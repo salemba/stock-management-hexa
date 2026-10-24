@@ -13,12 +13,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
 /**
  * <h1>StockApiController (Inbound REST Adapter)</h1>
- * <p>Adaptateur Web REST exposant le contrat OpenAPI et traduisant les DTOs Web en appels de cas d'utilisation du domaine.</p>
+ * <p>Adaptateur Web REST exposant le contrat OpenAPI et traduisant les DTOs générés en appels de cas d'utilisation du domaine.</p>
  */
 @RestController
 @RequestMapping("/api/v1/stocks")
@@ -35,32 +36,35 @@ public class StockApiController {
     @GetMapping
     public ResponseEntity<List<StockItemResponse>> getStockItems() {
         List<StockItemResponse> response = consultStockQuery.getAllProducts().stream()
-                .map(StockItemResponse::fromDomain)
+                .map(this::toStockItemResponse)
                 .toList();
         return ResponseEntity.ok(response);
     }
 
     @PostMapping
     public ResponseEntity<StockItemResponse> createStockItem(@Valid @RequestBody CreateStockItemRequest request) {
-        ProductCategory category = parseCategory(request.category());
+        ProductCategory category = parseCategory(request.getCategory());
+        BigDecimal qty = request.getQuantity() != null ? request.getQuantity() : BigDecimal.ZERO;
+        BigDecimal threshold = request.getReorderThreshold() != null ? request.getReorderThreshold() : BigDecimal.ZERO;
+
         Product productToCreate = new Product(
             UUID.randomUUID(),
-            request.sku(),
-            request.name(),
+            request.getSku(),
+            request.getName(),
             category,
-            request.unitPrice(),
-            StockQuantity.of(request.quantity()),
-            StockQuantity.of(request.reorderThreshold())
+            request.getUnitPrice() != null ? request.getUnitPrice() : BigDecimal.ZERO,
+            StockQuantity.of(qty),
+            StockQuantity.of(threshold)
         );
 
         Product created = manageStockUseCase.createProduct(productToCreate);
-        return ResponseEntity.status(HttpStatus.CREATED).body(StockItemResponse.fromDomain(created));
+        return ResponseEntity.status(HttpStatus.CREATED).body(toStockItemResponse(created));
     }
 
     @GetMapping("/{sku}")
     public ResponseEntity<StockItemResponse> getStockBySku(@PathVariable("sku") String sku) {
         return consultStockQuery.getProductBySku(sku)
-                .map(StockItemResponse::fromDomain)
+                .map(this::toStockItemResponse)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -69,24 +73,39 @@ public class StockApiController {
     public ResponseEntity<StockItemResponse> addStock(
             @PathVariable("sku") String sku,
             @Valid @RequestBody StockMovementRequest request) {
+        BigDecimal qty = request.getQuantity() != null ? request.getQuantity() : BigDecimal.ZERO;
         Product updated = manageStockUseCase.addStock(
             sku,
-            StockQuantity.of(request.quantity()),
-            request.reason() != null ? request.reason() : "Approvisionnement REST"
+            StockQuantity.of(qty),
+            request.getReason() != null ? request.getReason() : "Approvisionnement REST"
         );
-        return ResponseEntity.ok(StockItemResponse.fromDomain(updated));
+        return ResponseEntity.ok(toStockItemResponse(updated));
     }
 
     @PostMapping("/{sku}/deduct")
     public ResponseEntity<StockItemResponse> deductStock(
             @PathVariable("sku") String sku,
             @Valid @RequestBody StockMovementRequest request) {
+        BigDecimal qty = request.getQuantity() != null ? request.getQuantity() : BigDecimal.ZERO;
         Product updated = manageStockUseCase.deductStock(
             sku,
-            StockQuantity.of(request.quantity()),
-            request.reason() != null ? request.reason() : "Retrait REST"
+            StockQuantity.of(qty),
+            request.getReason() != null ? request.getReason() : "Retrait REST"
         );
-        return ResponseEntity.ok(StockItemResponse.fromDomain(updated));
+        return ResponseEntity.ok(toStockItemResponse(updated));
+    }
+
+    private StockItemResponse toStockItemResponse(Product product) {
+        StockItemResponse response = new StockItemResponse();
+        response.setId(product.getId());
+        response.setSku(product.getSku());
+        response.setName(product.getName());
+        response.setCategory(product.getCategory() != null ? product.getCategory().name() : null);
+        response.setUnitPrice(product.getUnitPrice());
+        response.setQuantity(product.getCurrentQuantity() != null ? product.getCurrentQuantity().getValue() : null);
+        response.setReorderThreshold(product.getReorderThreshold() != null ? product.getReorderThreshold().getValue() : null);
+        response.setReorderNeeded(product.isReorderNeeded());
+        return response;
     }
 
     private ProductCategory parseCategory(String categoryName) {

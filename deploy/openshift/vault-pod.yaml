@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stock-vault
+  labels:
+    app: stock-vault
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stock-vault
+  template:
+    metadata:
+      labels:
+        app: stock-vault
+    spec:
+      containers:
+        - name: vault
+          image: docker.io/hashicorp/vault:1.15.2
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # 1. Démarrer le serveur Vault en mode dev
+              vault server -dev -dev-listen-address=0.0.0.0:8200 -dev-root-token-id=root &
+              VAULT_PID=$!
+
+              # 2. Attendre que le serveur Vault soit prêt
+              export VAULT_ADDR="http://127.0.0.1:8200"
+              export VAULT_TOKEN="root"
+              
+              until vault status > /dev/null 2>&1; do
+                sleep 1
+              done
+
+              # 3. Peuplement des secrets pour le microservice
+              vault kv put secret/stock-management \
+                POSTGRES_USER="stock_user" \
+                POSTGRES_PASSWORD="stock_password" \
+                JWT_SECRET="SuperSecretKeyForJWTAuth2026WhichIsLongEnough" \
+                EXTERNAL_API_KEY="sk_test_51MzX123456789SecretKey"
+
+              echo "Secrets initialisés avec succès dans secret/stock-management"
+              wait $VAULT_PID
+          env:
+            - name: SKIP_SETCAP
+              value: "true"
+            - name: VAULT_LOCAL_CONFIG
+              value: '{"disable_mlock": true}'
+          ports:
+            - containerPort: 8200
+              name: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            limits:
+              memory: 256Mi
+              cpu: 250m
+            requests:
+              memory: 128Mi
+              cpu: 100m
+          readinessProbe:
+            httpGet:
+              path: /v1/sys/health
+              port: 8200
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /v1/sys/health
+              port: 8200
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-service
+  labels:
+    app: stock-vault
+spec:
+  ports:
+    - port: 8200
+      targetPort: 8200
+      name: http
+  selector:
+    app: stock-vault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+  labels:
+    app: stock-vault
+spec:
+  ports:
+    - port: 8200
+      targetPort: 8200
+      name: http
+  selector:
+    app: stock-vault
