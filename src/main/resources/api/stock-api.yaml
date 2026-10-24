@@ -54,6 +54,54 @@ paths:
         '404':
           description: Stock item not found
 
+  /api/v1/stocks/{sku}/add:
+    post:
+      summary: Add quantity to stock
+      operationId: addStock
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockMovementRequest'
+      responses:
+        '200':
+          description: Stock updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItemResponse'
+
+  /api/v1/stocks/{sku}/deduct:
+    post:
+      summary: Deduct quantity from stock
+      operationId: deductStock
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockMovementRequest'
+      responses:
+        '200':
+          description: Stock updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItemResponse'
+
 components:
   schemas:
     CreateStockItemRequest:
@@ -69,9 +117,30 @@ components:
         name:
           type: string
           example: "Laptop Pro 15"
+        category:
+          type: string
+          example: "ELECTRONICS"
+        unitPrice:
+          type: number
+          example: 1200.00
         quantity:
-          type: integer
+          type: number
           example: 50
+        reorderThreshold:
+          type: number
+          example: 5
+
+    StockMovementRequest:
+      type: object
+      required:
+        - quantity
+      properties:
+        quantity:
+          type: number
+          example: 10
+        reason:
+          type: string
+          example: "Restock from supplier"
 
     StockItemResponse:
       type: object
@@ -83,5 +152,13 @@ components:
           type: string
         name:
           type: string
+        category:
+          type: string
+        unitPrice:
+          type: number
         quantity:
-          type: integer
+          type: number
+        reorderThreshold:
+          type: number
+        reorderNeeded:
+          type: boolean
